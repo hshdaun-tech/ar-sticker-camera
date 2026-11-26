@@ -19,6 +19,13 @@ html,body{margin:0;height:100%;background:#111;overflow:hidden;font-family:-appl
 #bar button{border:0;cursor:pointer;color:#fff;background:transparent;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 #bar button:active{transform:scale(.9)}
 #shutter{background:rgba(255,255,255,.92)!important;color:#222!important;width:56px!important;height:56px!important}
+#tray{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 96px);display:flex;gap:8px;overflow-x:auto;padding:6px 14px;touch-action:pan-x;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#tray::-webkit-scrollbar{display:none}
+#tray .tb{flex:0 0 auto;width:52px;height:64px;border-radius:13px;border:2px solid rgba(255,255,255,.25);background:rgba(60,60,64,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+#tray .tb img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none}
+#tray .tb.on{border-color:#4d9bff;background:rgba(77,155,255,.35)}
+#tray .tb.on::after{content:"✓";position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#2f80ff;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+#tray .tb.plus{color:#fff;font-size:26px;font-weight:300}
 #thumb{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 28px);width:44px;height:44px;border-radius:12px;border:2px solid #fff;background:#333 center/cover;display:none;cursor:pointer}
 #count{position:fixed;right:16px;top:calc(env(safe-area-inset-top) + 14px);padding:6px 12px;border-radius:16px;background:rgba(60,60,64,.55);color:#fff;font-size:13px;backdrop-filter:blur(10px)}
 #toast{position:fixed;left:50%;top:44%;transform:translate(-50%,0);background:rgba(70,70,74,.75);color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap;backdrop-filter:blur(8px)}
@@ -68,6 +75,7 @@ html,body{margin:0;height:100%;background:#111;overflow:hidden;font-family:-appl
   <button id="shutter" aria-label="촬영"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.6"/></svg></button>
   <button id="flip" aria-label="카메라 전환"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h13l-3-3M21 16H8l3 3"/></svg></button>
 </div>
+<div id="tray"></div>
 <div id="thumb"></div>
 
 <div id="sheet">
@@ -131,10 +139,10 @@ $('file').addEventListener('change', async e=>{
     try{
       const url=URL.createObjectURL(f); const im=await loadImg(url);
       const cut=autoCutout(im); const out=await loadImg(cut.toDataURL('image/png'));
-      const s={id:++uid,img:out,url:out.src}; sources.push(s); selected.add(s.id);
+      const s={id:++uid,img:out,url:out.src}; sources.push(s); selected.add(s.id); scene.push(makeSticker(s));
     }catch(err){toast('이미지를 불러오지 못했어요');}
   }
-  e.target.value=''; buildGrid();
+  e.target.value=''; buildGrid(); buildTray(); updCount();
 });
 
 /* ---------- 선택 시트 ---------- */
@@ -162,7 +170,24 @@ $('ok').onclick=()=>{
   closeSheet(); updCount();
   toast(scene.length? '소스를 불러왔습니다' : '선택된 소스가 없어요');
 };
-function updCount(){ $('count').textContent = scene.length ? ('소스 '+scene.length) : ''; }
+function updCount(){ $('count').textContent = scene.length ? ('소스 '+scene.length) : ''; refreshTray(); }
+function inScene(id){ return scene.some(s=>s.src.id===id); }
+function buildTray(){
+  const t=$('tray'); t.innerHTML='';
+  sources.forEach(src=>{
+    const b=document.createElement('button'); b.className='tb'; b.dataset.id=src.id; b.setAttribute('aria-label','소스');
+    b.innerHTML='<img src="'+src.url+'">';
+    b.onclick=()=>{
+      if(inScene(src.id)){ const i=scene.findIndex(s=>s.src.id===src.id); if(scene[i]===sel) sel=null; scene.splice(i,1); }
+      else if(scene.length<MAX_SELECT){ scene.push(makeSticker(src)); }
+      updCount();
+    };
+    t.appendChild(b);
+  });
+  const p=document.createElement('button'); p.className='tb plus'; p.textContent='+'; p.setAttribute('aria-label','내 이미지 추가'); p.onclick=()=>$('file').click(); t.appendChild(p);
+  refreshTray();
+}
+function refreshTray(){ document.querySelectorAll('#tray .tb[data-id]').forEach(b=>b.classList.toggle('on',inScene(+b.dataset.id))); }
 
 /* ---------- 스티커 ---------- */
 // 좌표는 화면 대비 0~1 (발 기준). 같은 좌표계로 캡처에도 그대로 그려짐.
@@ -360,7 +385,7 @@ $('save').onclick=async()=>{
 let tt; function toast(m){ const el=$('toast'); el.textContent=m; el.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>el.classList.remove('on'),1800); }
 
 /* ---------- 시작 ---------- */
-initDefaults().then(()=>{ sources.forEach(s=>selected.add(s.id)); selected.clear(); buildGrid(); openSheet(); });
+initDefaults().then(()=>{ buildTray(); toast('아래에서 소스를 눌러 추가하세요'); });
 startCam();
 requestAnimationFrame(loop);
 })();
